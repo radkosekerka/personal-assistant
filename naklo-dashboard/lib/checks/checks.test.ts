@@ -34,6 +34,7 @@ const contract = (o: Partial<Contract> & { personId: number }): Contract => ({
   monthlyFee: null,
   driveUrl: null,
   signedAt: null,
+  kilomayoContractId: null,
   ...o,
 });
 const work = (personId: number, month: string, hours: number): WorkMonth => ({

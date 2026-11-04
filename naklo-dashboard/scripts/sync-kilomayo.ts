@@ -1,32 +1,36 @@
 /**
- * Denní synchronizace hodin z KiloMayo (jen čtení).
- * Zatím kostra: chybí čtení magic linku z Gmailu a těla dotazů, viz lib/kilomayo/client.ts.
+ * Denní synchronizace z KiloMayo (jen čtení): členové týmu, smlouvy a odpracované hodiny
+ * za minulý a tento měsíc. Přihlašuje se heslem z KILOMAYO_PASSWORD (nikdy v repozitáři).
  */
 import { closeDb, getDb, schema } from "../lib/db";
-import { KiloMayoHttp, type MagicLinkReader } from "../lib/kilomayo/client";
+import { KiloMayoHttp } from "../lib/kilomayo/client";
+import { applyMembers, planMembers } from "../lib/kilomayo/members";
 import { applyHours, fromKiloMayo, planHours } from "../lib/sync";
 import { addMonths, monthOf, todayIso } from "../lib/dates";
 
-const notYet: MagicLinkReader = {
-  async waitForLink() {
-    throw new Error("Čtení magic linku z info@ ještě není napojené (Gmail API + servisní účet)");
-  },
-};
-
 async function main() {
+  const password = process.env.KILOMAYO_PASSWORD;
+  if (!password) throw new Error("Chybí KILOMAYO_PASSWORD");
   const km = new KiloMayoHttp(
     process.env.KILOMAYO_BASE_URL ?? "https://naklo.kilomayo.app",
     process.env.KILOMAYO_LOGIN_EMAIL ?? "info@wakesurfnaklo.cz",
-    notYet,
+    password,
   );
   await km.login();
-  const thisMonth = monthOf(todayIso());
-  const people = await getDb().select().from(schema.people);
-  for (const m of [addMonths(thisMonth, -1), thisMonth]) {
-    const plan = planHours(people, fromKiloMayo(await km.monthlyHours(m)));
-    await applyHours(plan, "kilomayo", "sync:kilomayo");
-    console.log(`${m}: ${plan.upserts.length} řádků, ${plan.unmatched.length} nespárovaných`);
-  }
+  const today = todayIso();
+
+  const members = await km.members();
+  const mPlan = planMembers(await getDb().select().from(schema.people), members, today);
+  await applyMembers(mPlan, "sync:kilomayo");
+  console.log(
+    `Lidé: ${mPlan.create.length} nových, ${mPlan.link.length} spárovaných, ${mPlan.contracts.length} smluv, ${mPlan.skipped.length} přeskočeno`,
+  );
+
+  const thisMonth = monthOf(today);
+  const rows = await km.monthlyHours(addMonths(thisMonth, -1), thisMonth, members.map((m) => m.id));
+  const plan = planHours(await getDb().select().from(schema.people), fromKiloMayo(rows));
+  await applyHours(plan, "kilomayo", "sync:kilomayo");
+  console.log(`Hodiny: ${plan.upserts.length} řádků, ${plan.unmatched.length} nespárovaných`);
   await closeDb();
 }
 

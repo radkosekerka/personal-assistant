@@ -97,6 +97,8 @@ export const contracts = pgTable("contracts", {
   monthlyFee: integer("monthly_fee"),
   driveUrl: text("drive_url"),
   signedAt: date("signed_at"),
+  /** ID smlouvy v KiloMayo (workContracts), když pochází odtud. */
+  kilomayoContractId: text("kilomayo_contract_id").unique(),
 });
 
 /** Odpracované hodiny za měsíc (typicky z KiloMayo). month = "YYYY-MM". */
