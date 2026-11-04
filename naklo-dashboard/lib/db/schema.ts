@@ -10,6 +10,7 @@ import {
   boolean,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 /** Typ pracovního vztahu. */
 export const relationType = pgEnum("relation_type", ["HPP", "DPP", "DPC", "ICO"]);
@@ -159,8 +160,63 @@ export const tasks = pgTable(
     /** Klíč red flagu, ze kterého úkol vznikl (aby nevznikal dvakrát). */
     flagKey: text("flag_key"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    /** Modul: hr, events, kemp, wakesurf, bistro, wakeboard, finance, obecne. */
+    module: text("module").notNull().default("obecne"),
+    /** Komu je úkol přidělený (owners.id). */
+    ownerId: integer("owner_id").references(() => owners.id, { onDelete: "set null" }),
+    /** 1 = kritické, 2 = varování, 3 = běžné. */
+    priority: integer("priority").notNull().default(3),
+    /** flag = založil bot z red flagu, manual = ručně. */
+    source: text("source").notNull().default("manual"),
+    href: text("href"),
+    /** Návrh odpovědi nebo postupu, který připravil bot. Nikdy se sám neodesílá. */
+    draft: text("draft"),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    closedBy: text("closed_by"),
   },
   (t) => [uniqueIndex("tasks_flag_key_idx").on(t.flagKey)],
+);
+
+/** Lidé, kterým bot rozděluje úkoly (vedoucí, provoz). Účetní sem nepatří: bot ji nikdy nekontaktuje. */
+export const owners = pgTable("owners", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  role: text("role"),
+  /** Moduly, za které odpovídá; "*" = vše, co nikdo jiný nemá. */
+  modules: text("modules").array().notNull().default(sql`'{}'::text[]`),
+  whatsapp: text("whatsapp"),
+  email: text("email"),
+  active: boolean("active").notNull().default(true),
+});
+
+/** Ranní plán dne od bota. */
+export const briefs = pgTable("briefs", {
+  id: serial("id").primaryKey(),
+  date: date("date").notNull().unique(),
+  text: text("text").notNull(),
+  generatedBy: text("generated_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const outboxStatus = pgEnum("outbox_status", ["ke_schvaleni", "schvaleno", "zamitnuto", "odeslano"]);
+
+/** Zprávy, které bot připravil k odeslání. Odejdou až po schválení a jen přes napojený kanál. */
+export const outbox = pgTable(
+  "outbox",
+  {
+    id: serial("id").primaryKey(),
+    date: date("date").notNull(),
+    ownerId: integer("owner_id")
+      .notNull()
+      .references(() => owners.id, { onDelete: "cascade" }),
+    channel: text("channel").notNull(),
+    text: text("text").notNull(),
+    status: outboxStatus("status").notNull().default("ke_schvaleni"),
+    decidedBy: text("decided_by"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("outbox_owner_date_idx").on(t.ownerId, t.date)],
 );
 
 /** Audit: kdo co kdy změnil nebo synchronizoval. */
@@ -324,3 +380,6 @@ export const prItems = pgTable(
 );
 
 export type PrItem = typeof prItems.$inferSelect;
+export type Owner = typeof owners.$inferSelect;
+export type Brief = typeof briefs.$inferSelect;
+export type OutboxMsg = typeof outbox.$inferSelect;

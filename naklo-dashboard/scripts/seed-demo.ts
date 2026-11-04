@@ -4,13 +4,14 @@
  */
 import { eq, sql } from "drizzle-orm";
 import { getDb, closeDb, schema } from "../lib/db";
+import { runBot } from "../lib/bot/run";
 import { addMonths, monthOf, todayIso, dayOfMonth } from "../lib/dates";
 
 async function main() {
   if (process.env.NODE_ENV === "production") throw new Error("Demo data nepatří do produkce");
   const db = getDb();
   await db.execute(
-    sql`TRUNCATE pr_items, transactions, cash_counts, audit_log, tasks, invoices, payments, work_months, contracts, trainings, training_requirements, staffing_needs, events, inquiries, leads, people, companies RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE outbox, briefs, owners, pr_items, transactions, cash_counts, audit_log, tasks, invoices, payments, work_months, contracts, trainings, training_requirements, staffing_needs, events, inquiries, leads, people, companies RESTART IDENTITY CASCADE`,
   );
 
   const today = todayIso();
@@ -180,10 +181,25 @@ async function main() {
     await db.insert(schema.cashCounts).values({ unit, date: c2, amount: unit === "bistro" ? exp - 1450 : exp, countedBy: "demo" });
   }
 
+  const [radko, evaOwner, tomas] = await db
+    .insert(schema.owners)
+    .values([
+      { name: "Radko (majitel)", role: "majitel", modules: ["*", "hr", "finance"], whatsapp: "+420600000001" },
+      { name: "Eva Demo", role: "eventy a PR", modules: ["events"], whatsapp: "+420600000002" },
+      { name: "Tomáš Demo", role: "vedoucí bistra", modules: ["bistro"], email: "tomas.demo@example.com" },
+      { name: "Jakub Demo", role: "provoz vody a kempu", modules: ["wakesurf", "wakeboard", "kemp"], whatsapp: "+420600000004" },
+    ])
+    .returning();
+
   await db.insert(schema.tasks).values([
-    { title: "Poslat účetní podklady ke mzdám", dueDate: dayOfMonth(m0, 3) },
-    { title: "Dohodnout novou smlouvu na sezónu 2027", personId: marek.id },
+    { title: "Poslat účetní podklady ke mzdám", dueDate: dayOfMonth(m0, 3), module: "hr", ownerId: radko.id, priority: 2 },
+    { title: "Dohodnout novou smlouvu na sezónu 2027", personId: marek.id, module: "hr", ownerId: radko.id },
+    { title: "Objednat nové menu tabule na sezónu", module: "bistro", ownerId: tomas.id, dueDate: dayOfMonth(m0, 20) },
+    { title: "Rozeslat nabídku firemních akcí 2027", module: "events", ownerId: evaOwner.id, priority: 2, dueDate: dayOfMonth(m0, 10) },
   ]);
+
+  // Ranní běh bota bez AI, ať je vidět plán dne a úkoly z red flagů.
+  await runBot("seed", { ai: false });
 
   console.log("Demo data nahraná.");
   await closeDb();

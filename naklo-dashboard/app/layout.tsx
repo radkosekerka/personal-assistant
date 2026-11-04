@@ -23,6 +23,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 {m.name}
               </Link>
             ))}
+            <Link href="/ukoly">Úkoly</Link>
+            <Link href="/bot">Bot</Link>
           </nav>
         </header>
         <main>{children}</main>

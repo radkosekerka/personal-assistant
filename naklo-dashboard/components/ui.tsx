@@ -1,8 +1,9 @@
 import Link from "next/link";
 import type { Flag } from "@/lib/checks";
 import type { MonthRow } from "@/lib/checks";
-import type { Person, Task } from "@/lib/db/schema";
-import { createTask, setTaskStatus } from "@/app/actions";
+import type { Owner, Person, Task } from "@/lib/db/schema";
+import { assignTask, createTask, setTaskStatus } from "@/app/actions";
+import { MODULE_LABEL, type ModuleKey } from "@/lib/bot/plan";
 import { formatDate } from "@/lib/dates";
 
 export const RELATION_LABEL: Record<string, string> = {
@@ -53,8 +54,19 @@ export function FlagList({ flags, tasks, limit }: { flags: Flag[]; tasks: Task[]
   );
 }
 
-export function TaskList({ tasks, people }: { tasks: Task[]; people: Person[] }) {
+export function TaskList({
+  tasks,
+  people = [],
+  owners = [],
+  showModule = false,
+}: {
+  tasks: Task[];
+  people?: Person[];
+  owners?: Owner[];
+  showModule?: boolean;
+}) {
   const name = new Map(people.map((p) => [p.id, p.fullName]));
+  const ownerName = new Map(owners.map((o) => [o.id, o.name]));
   if (tasks.length === 0) return <div className="card empty">Žádné úkoly.</div>;
   return (
     <div className="card">
@@ -69,13 +81,45 @@ export function TaskList({ tasks, people }: { tasks: Task[]; people: Person[] })
               </button>
             </form>
             <div className="body">
-              <div style={t.status === "done" ? { textDecoration: "line-through" } : undefined}>{t.title}</div>
+              <div style={t.status === "done" ? { textDecoration: "line-through" } : undefined}>
+                {t.priority === 1 && t.status === "open" && <span className="badge critical">Kritické</span>}{" "}
+                {showModule && <span className="badge neutral">{MODULE_LABEL[t.module as ModuleKey] ?? t.module}</span>}{" "}
+                {t.href ? <Link href={t.href}>{t.title}</Link> : t.title}
+              </div>
               <div className="detail">
-                {[t.personId ? name.get(t.personId) : null, t.dueDate ? `do ${formatDate(t.dueDate)}` : null, t.detail]
+                {[
+                  t.ownerId ? ownerName.get(t.ownerId) : null,
+                  t.personId ? name.get(t.personId) : null,
+                  t.dueDate ? `do ${formatDate(t.dueDate)}` : null,
+                  t.closedBy === "bot" ? "uzavřel bot (problém zmizel)" : null,
+                  t.detail,
+                ]
                   .filter(Boolean)
                   .join(" · ")}
               </div>
+              {t.draft && t.status === "open" && (
+                <details className="draft">
+                  <summary>Návrh odpovědi od bota</summary>
+                  <pre>{t.draft}</pre>
+                </details>
+              )}
             </div>
+            {owners.length > 0 && t.status === "open" && (
+              <form action={assignTask} className="inline assign">
+                <input type="hidden" name="id" value={t.id} />
+                <select name="ownerId" defaultValue={t.ownerId ?? ""} aria-label="Přidělit">
+                  <option value="">Nikdo</option>
+                  {owners
+                    .filter((o) => o.active)
+                    .map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.name}
+                      </option>
+                    ))}
+                </select>
+                <button type="submit">Přidělit</button>
+              </form>
+            )}
           </li>
         ))}
       </ul>

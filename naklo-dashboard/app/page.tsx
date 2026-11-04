@@ -4,15 +4,17 @@ import { eventsData } from "@/lib/events/data";
 import { MODULES } from "@/lib/modules";
 import { allUnitsData } from "@/lib/units/data";
 import { cashState, monthSummary, UNITS } from "@/lib/units";
-import { addMonths, formatCzk, monthLabel, monthOf } from "@/lib/dates";
+import { addMonths, formatCzk, formatDate, monthLabel, monthOf } from "@/lib/dates";
+import { botData } from "@/lib/bot/data";
+import { runBotNow } from "@/app/actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const [hr, ev, units] = await Promise.all([dashboardData(), eventsData(), allUnitsData()]);
+  const [hr, ev, units, bot] = await Promise.all([dashboardData(), eventsData(), allUnitsData(), botData()]);
   const hrCrit = hr.flags.filter((f) => f.severity === "critical");
   const evCrit = ev.flags.filter((f) => f.severity === "critical");
-  const openTasks = hr.tasks.filter((t) => t.status === "open").length;
+  const openTasks = hr.tasks.filter((t) => t.status === "open" && t.module === "hr").length;
 
   const stats: Record<string, [string, number | string, boolean?][]> = {
     hr: [
@@ -55,6 +57,24 @@ export default async function Home() {
   return (
     <>
       <h1>Náklo Dashboard</h1>
+      <section className="card" style={{ padding: 16, marginBottom: 20 }}>
+        <div className="brief-head">
+          <h2 style={{ margin: 0 }}>Dnes{bot.brief ? ` · ${formatDate(bot.brief.date)}` : ""}</h2>
+          <span className="muted" style={{ fontSize: 13 }}>
+            <Link href="/ukoly">{bot.open.length} otevřených úkolů</Link>
+            {" · "}
+            <Link href="/bot">{bot.outbox.filter((m) => m.status === "ke_schvaleni").length} zpráv ke schválení</Link>
+          </span>
+        </div>
+        {bot.brief ? (
+          <div className="brief" style={{ marginTop: 10 }}>{bot.brief.text}</div>
+        ) : (
+          <form action={runBotNow} style={{ marginTop: 10 }}>
+            <span className="muted">Bot dnes ještě neběžel. </span>
+            <button className="primary" type="submit">Sestavit plán dne</button>
+          </form>
+        )}
+      </section>
       <div className="modules">
         {MODULES.map((m) => (
           <Link key={m.key} href={m.href} className={`module ${m.live ? "" : "soon"}`}>
