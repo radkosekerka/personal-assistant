@@ -83,3 +83,38 @@ export async function addCashCount(form: FormData) {
   await audit(actor, "cash.count", `${data.unit} ${data.amount}`);
   revalidatePath("/", "layout");
 }
+
+export async function setPrStatus(form: FormData) {
+  const actor = await requireUser();
+  const id = z.coerce.number().int().positive().parse(form.get("id"));
+  const status = z.enum(["nove", "vyrizeno", "planovano", "publikovano"]).parse(form.get("status"));
+  await getDb().update(schema.prItems).set({ status }).where(eq(schema.prItems.id, id));
+  await audit(actor, `pr.${status}`, String(id));
+  revalidatePath("/", "layout");
+}
+
+export async function addPrItem(form: FormData) {
+  const actor = await requireUser();
+  const data = z
+    .object({
+      kind: z.enum(["zminka", "prispevek"]),
+      channel: z.string().trim().min(1).max(60),
+      at: DATE,
+      title: z.string().trim().min(1).max(300),
+      url: z.string().url().max(1000).optional(),
+      eventId: z.coerce.number().int().positive().optional(),
+      status: z.enum(["planovano", "publikovano", "vyrizeno"]),
+    })
+    .parse({
+      kind: form.get("kind"),
+      channel: form.get("channel"),
+      at: form.get("at"),
+      title: form.get("title"),
+      url: opt(form.get("url")),
+      eventId: opt(form.get("eventId")),
+      status: form.get("status"),
+    });
+  await getDb().insert(schema.prItems).values({ ...data, at: new Date(`${data.at}T12:00:00Z`) });
+  await audit(actor, `pr.add.${data.kind}`, data.title);
+  revalidatePath("/", "layout");
+}

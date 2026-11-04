@@ -288,3 +288,37 @@ export const cashCounts = pgTable("cash_counts", {
 
 export type Transaction = typeof transactions.$inferSelect;
 export type CashCount = typeof cashCounts.$inferSelect;
+
+/* ───────────── PR ───────────── */
+
+export const prKind = pgEnum("pr_kind", ["recenze", "zprava", "komentar", "zminka", "prispevek"]);
+export const prStatus = pgEnum("pr_status", ["nove", "vyrizeno", "planovano", "publikovano"]);
+
+/**
+ * Jedna položka PR: recenze (Google, Mapy.cz…), zpráva nebo komentář ze sítí,
+ * zmínka v médiích, nebo plánovaný či publikovaný příspěvek.
+ */
+export const prItems = pgTable(
+  "pr_items",
+  {
+    id: serial("id").primaryKey(),
+    kind: prKind("kind").notNull(),
+    channel: text("channel").notNull(),
+    externalId: text("external_id"),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    author: text("author"),
+    title: text("title"),
+    text: text("text"),
+    /** Hodnocení 1–5 u recenzí. */
+    rating: integer("rating"),
+    url: text("url"),
+    status: prStatus("status").notNull().default("nove"),
+    /** Vazba příspěvku na akci. */
+    eventId: integer("event_id").references(() => events.id, { onDelete: "set null" }),
+    /** Dosah nebo počet reakcí u příspěvků a zmínek. */
+    reach: integer("reach"),
+  },
+  (t) => [uniqueIndex("pr_items_external_idx").on(t.externalId)],
+);
+
+export type PrItem = typeof prItems.$inferSelect;

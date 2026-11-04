@@ -25,6 +25,7 @@ export default async function Home() {
       ["bez odpovědi", ev.inquiries.filter((q) => !q.answered).length, evCrit.length > 0],
       ["rozjednaných", ev.events.filter((e) => e.status === "jedna_se" || e.status === "nova").length],
       ["potvrzených", ev.events.filter((e) => e.status === "potvrzeno" && (e.startDate ?? "") >= ev.today).length],
+      ["PR k vyřízení", ev.pr.filter((i) => i.status === "nove").length, ev.pr.some((i) => i.status === "nove" && i.rating != null && i.rating <= 3)],
     ],
   };
 

@@ -19,11 +19,11 @@ export const MODULES: ModuleDef[] = [
   },
   {
     key: "events",
-    name: "Events",
+    name: "Events & PR",
     href: "/events",
     live: true,
-    summary: "Poptávky, rozjednané a potvrzené akce, kalendář, akce na 2027, leady.",
-    sources: ["Tabulka Event Form 2026", "Webový formulář", "Později e-maily info@"],
+    summary: "Poptávky, akce, kalendář, leady. PR: recenze, zprávy a komentáře ze sítí, média, příspěvky.",
+    sources: ["Tabulka Event Form 2026", "E-maily", "Facebook a Instagram", "Google a Mapy.cz recenze"],
   },
   {
     key: "finance",

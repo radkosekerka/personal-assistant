@@ -10,7 +10,7 @@ async function main() {
   if (process.env.NODE_ENV === "production") throw new Error("Demo data nepatří do produkce");
   const db = getDb();
   await db.execute(
-    sql`TRUNCATE transactions, cash_counts, audit_log, tasks, invoices, payments, work_months, contracts, trainings, training_requirements, staffing_needs, events, inquiries, leads, people, companies RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE pr_items, transactions, cash_counts, audit_log, tasks, invoices, payments, work_months, contracts, trainings, training_requirements, staffing_needs, events, inquiries, leads, people, companies RESTART IDENTITY CASCADE`,
   );
 
   const today = todayIso();
@@ -105,6 +105,22 @@ async function main() {
     { sourceKey: "demo:5", type: "Firemní den", contactName: "Ondřej Demo", company: "Demo IT a.s.", email: "ondrej@demo.cz", people: 120, budget: 150000, status: "nova" },
     { sourceKey: "demo:6", type: "Svatba", contactName: "Lenka Demo", email: "lenka@demo.cz", startDate: `${y}-07-04`, status: "storno" },
   ]);
+  const evs = await db.select().from(schema.events);
+  const evId = (key: string) => evs.find((e) => e.sourceKey === key)!.id;
+  const at = (d: string, h = "10:00") => new Date(`${d}T${h}:00+01:00`);
+  await db.insert(schema.prItems).values([
+    { kind: "recenze", channel: "Google", at: at(dayOfMonth(m0, 2)), author: "Lucie D.", rating: 2, text: "Dlouho jsme čekali na loď, obsluha nepříjemná.", status: "nove" },
+    { kind: "recenze", channel: "Google", at: at(dayOfMonth(m1, 28)), author: "Petr K.", rating: 5, text: "Skvělý wakesurf, určitě znovu!", status: "nove" },
+    { kind: "recenze", channel: "Mapy.cz", at: at(dayOfMonth(m1, 15)), author: "anonym", rating: 4, text: "Pěkný kemp, čisté sprchy.", status: "vyrizeno" },
+    { kind: "recenze", channel: "Google", at: at(dayOfMonth(m2, 10)), author: "Martina S.", rating: 5, text: "Nejlepší teambuilding.", status: "vyrizeno" },
+    { kind: "recenze", channel: "Booking.com", at: at(dayOfMonth(m2, 3)), author: "Host", rating: 4, text: "Glamping super, snídaně slabší.", status: "vyrizeno" },
+    { kind: "zprava", channel: "Instagram", at: at(dayOfMonth(m0, 1), "21:10"), author: "@demo_surfer", text: "Máte otevřeno i v listopadu?", status: "nove" },
+    { kind: "komentar", channel: "Facebook", at: at(dayOfMonth(m0, 3), "18:00"), author: "Jana Demo", text: "Kolik stojí permanentka na příští rok?", status: "nove" },
+    { kind: "zminka", channel: "Olomoucký deník (demo)", at: at(dayOfMonth(m2, 12)), title: "Wakesurf u Olomouce láká i zahraniční jezdce", url: "https://example.com/clanek", reach: 45000, status: "vyrizeno" },
+    { kind: "prispevek", channel: "Instagram", at: at(dayOfMonth(m0, 15)), title: "Rozlučka sezóny – pozvánka", eventId: evId("demo:3"), status: "planovano" },
+    { kind: "prispevek", channel: "Facebook", at: at(dayOfMonth(m1, 2)), title: "Fotky z King of Surf", reach: 12800, status: "publikovano" },
+  ]);
+
   await db.insert(schema.inquiries).values([
     { sourceKey: "demo:q1", receivedAt: new Date(`${dayOfMonth(m0, 1)}T09:12:00+01:00`), name: "Martin Demo", email: "martin@demo.cz", message: "Firemní akce pro 60 lidí v červnu, prosím o nabídku.", channel: "New-web" },
     { sourceKey: "demo:q2", receivedAt: new Date(`${dayOfMonth(m1, 20)}T18:40:00+01:00`), name: "Alena Demo", email: "alena@demo.cz", message: "Oslava 50. narozenin, 30 lidí, ubytování?", channel: "New-web" },
