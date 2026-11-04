@@ -2,11 +2,14 @@ import Link from "next/link";
 import { dashboardData } from "@/lib/data";
 import { eventsData } from "@/lib/events/data";
 import { MODULES } from "@/lib/modules";
+import { allUnitsData } from "@/lib/units/data";
+import { cashState, monthSummary, UNITS } from "@/lib/units";
+import { addMonths, formatCzk, monthLabel, monthOf } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const [hr, ev] = await Promise.all([dashboardData(), eventsData()]);
+  const [hr, ev, units] = await Promise.all([dashboardData(), eventsData(), allUnitsData()]);
   const hrCrit = hr.flags.filter((f) => f.severity === "critical");
   const evCrit = ev.flags.filter((f) => f.severity === "critical");
   const openTasks = hr.tasks.filter((t) => t.status === "open").length;
@@ -25,9 +28,27 @@ export default async function Home() {
     ],
   };
 
+  for (const u of UNITS) {
+    const d = units[u];
+    const last = addMonths(monthOf(d.today), -1);
+    const m = monthSummary(d.tx, last);
+    const cash = cashState(d.tx, d.counts);
+    const label = monthLabel(last).split(" ")[0];
+    stats[u] = [
+      [`příjmy ${label}`, formatCzk(m.income)],
+      [`výsledek ${label}`, formatCzk(m.result), m.result < 0],
+      ["pokladna", formatCzk(cash.expected), d.flags.some((f) => f.severity === "critical")],
+    ];
+  }
+
   const allCritical = [
     ...hrCrit.map((f) => ({ key: f.key, title: f.title, href: f.personId ? `/hr/lide/${f.personId}` : "/hr", module: "HR" })),
     ...evCrit.map((f) => ({ key: f.key, title: f.title, href: f.href, module: "Events" })),
+    ...UNITS.flatMap((u) =>
+      units[u].flags
+        .filter((f) => f.severity === "critical")
+        .map((f) => ({ key: f.key, title: f.title, href: `/${u}`, module: MODULES.find((m) => m.key === u)!.name })),
+    ),
   ];
 
   return (

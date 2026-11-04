@@ -44,3 +44,42 @@ export async function setTaskStatus(form: FormData) {
   await audit(actor, `task.${status}`, String(id));
   revalidatePath("/", "layout");
 }
+
+const UNIT = z.enum(["kemp", "wakesurf", "bistro", "wakeboard"]);
+const DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+export async function addTransaction(form: FormData) {
+  const actor = await requireUser();
+  const data = z
+    .object({
+      unit: UNIT,
+      date: DATE,
+      kind: z.enum(["prijem", "naklad"]),
+      category: z.string().trim().min(1).max(100),
+      amount: z.coerce.number().int().positive().max(100_000_000),
+      method: z.enum(["hotove", "karta", "prevod", "online"]),
+      note: z.string().trim().max(500).optional(),
+    })
+    .parse({
+      unit: form.get("unit"),
+      date: form.get("date"),
+      kind: form.get("kind"),
+      category: form.get("category"),
+      amount: form.get("amount"),
+      method: form.get("method"),
+      note: opt(form.get("note")),
+    });
+  await getDb().insert(schema.transactions).values({ ...data, source: "manual" });
+  await audit(actor, `tx.${data.kind}`, `${data.unit} ${data.amount} ${data.category}`);
+  revalidatePath("/", "layout");
+}
+
+export async function addCashCount(form: FormData) {
+  const actor = await requireUser();
+  const data = z
+    .object({ unit: UNIT, date: DATE, amount: z.coerce.number().int().min(0).max(100_000_000), note: z.string().max(500).optional() })
+    .parse({ unit: form.get("unit"), date: form.get("date"), amount: form.get("amount"), note: opt(form.get("note")) });
+  await getDb().insert(schema.cashCounts).values({ ...data, countedBy: actor });
+  await audit(actor, "cash.count", `${data.unit} ${data.amount}`);
+  revalidatePath("/", "layout");
+}

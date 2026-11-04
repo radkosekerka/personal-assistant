@@ -10,7 +10,7 @@ async function main() {
   if (process.env.NODE_ENV === "production") throw new Error("Demo data nepatří do produkce");
   const db = getDb();
   await db.execute(
-    sql`TRUNCATE audit_log, tasks, invoices, payments, work_months, contracts, trainings, training_requirements, staffing_needs, events, inquiries, leads, people, companies RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE transactions, cash_counts, audit_log, tasks, invoices, payments, work_months, contracts, trainings, training_requirements, staffing_needs, events, inquiries, leads, people, companies RESTART IDENTITY CASCADE`,
   );
 
   const today = todayIso();
@@ -114,6 +114,55 @@ async function main() {
     { sourceKey: "demo:l1", type: "Sportovní událost", category: "SUP workshop", company: "Demo SUP Olomouc", stage: "TODO", location: "Olomouc", priority: "Vysoká", why: "Lokální SUP partner" },
     { sourceKey: "demo:l2", type: "Hudební event", category: "DJ večer", company: "Demo Sound Brno", stage: "Osloveno", location: "Brno", priority: "Střední", why: "Letní open air" },
   ]);
+
+  // Provozní střediska: deterministická pseudonáhoda, ať jsou demo čísla stabilní
+  let seed = 42;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const UNITS = {
+    kemp: { inc: [["Ubytování", 180000], ["Poplatky z pobytu", 9000]], cost: [["Energie", 22000], ["Úklid", 18000], ["Provize Booking", 14000]] },
+    wakesurf: { inc: [["Jízdy", 260000], ["Permanentky", 60000]], cost: [["Palivo", 38000], ["Servis lodi", 25000], ["Mzdy kapitánů", 70000]] },
+    bistro: { inc: [["Tržba bar", 210000], ["Tržba kuchyně", 140000]], cost: [["Zboží", 150000], ["Mzdy", 90000], ["Energie", 12000]] },
+    wakeboard: { inc: [["Jízdy", 120000], ["Půjčovné", 18000]], cost: [["Energie vlek", 30000], ["Servis vleku", 45000], ["Mzdy", 60000]] },
+  } as const;
+  const rows: (typeof schema.transactions.$inferInsert)[] = [];
+  for (const [unit, def] of Object.entries(UNITS)) {
+    for (let k = 5; k >= 0; k--) {
+      const mm = addMonths(m0, -k);
+      const season = [0.15, 0.35, 0.7, 1, 0.9, 0.5][(Number(mm.slice(5)) + 6) % 6] ?? 0.5;
+      const days = k === 0 ? Number(today.slice(8)) : 28;
+      for (const [category, base] of def.inc) {
+        for (let d = 1; d <= days; d += 7) {
+          const amt = Math.round((base / 4) * season * (0.7 + rnd() * 0.6));
+          rows.push({ unit, date: dayOfMonth(mm, d), kind: "prijem", category, amount: amt, method: "karta", source: "demo" });
+          rows.push({ unit, date: dayOfMonth(mm, d + 1), kind: "prijem", category, amount: Math.round(amt * 0.25), method: "hotove", source: "demo" });
+        }
+      }
+      if (k === 0 && days < 20) continue;
+      for (const [category, base] of def.cost) {
+        rows.push({ unit, date: dayOfMonth(mm, 20), kind: "naklad", category, amount: Math.round(base * (0.6 + season * 0.5) * (0.8 + rnd() * 0.4)), method: "prevod", source: "demo" });
+      }
+    }
+  }
+  // Wakeboard: ztrátový minulý měsíc (velká oprava vleku)
+  rows.push({ unit: "wakeboard", date: dayOfMonth(m1, 25), kind: "naklad", category: "Servis vleku", amount: 180000, method: "prevod", source: "demo", note: "Výměna lana a kladek" });
+  // Hotovostní výdaje z pokladny
+  rows.push({ unit: "bistro", date: dayOfMonth(m0, 2), kind: "naklad", category: "Zboží", amount: 3200, method: "hotove", source: "demo", note: "Makro" });
+  await db.insert(schema.transactions).values(rows);
+
+  // Přepočty pokladen: bistro má při posledním přepočtu manko 1 450 Kč
+  const cashTx = await db.select().from(schema.transactions);
+  const cashUntil = (unit: string, from: string, to: string) =>
+    cashTx
+      .filter((t) => t.unit === unit && t.method === "hotove" && t.date > from && t.date <= to)
+      .reduce((s, t) => s + (t.kind === "prijem" ? t.amount : -t.amount), 0);
+  const c1 = dayOfMonth(m1, 28);
+  const c2 = dayOfMonth(m0, 3);
+  for (const unit of ["kemp", "wakesurf", "bistro", "wakeboard"]) {
+    await db.insert(schema.cashCounts).values({ unit, date: c1, amount: 5000, countedBy: "demo" });
+    if (unit === "kemp") continue; // kemp dlouho nepřepočítaný
+    const exp = 5000 + cashUntil(unit, c1, c2);
+    await db.insert(schema.cashCounts).values({ unit, date: c2, amount: unit === "bistro" ? exp - 1450 : exp, countedBy: "demo" });
+  }
 
   await db.insert(schema.tasks).values([
     { title: "Poslat účetní podklady ke mzdám", dueDate: dayOfMonth(m0, 3) },

@@ -255,3 +255,36 @@ export const leads = pgTable(
   },
   (t) => [uniqueIndex("leads_source_key_idx").on(t.sourceKey)],
 );
+
+/* ───────────── Provozní střediska (Kemp, Wakesurf, Bistro, Wakeboard) ───────────── */
+
+export const txKind = pgEnum("tx_kind", ["prijem", "naklad"]);
+export const payMethod = pgEnum("pay_method", ["hotove", "karta", "prevod", "online"]);
+
+/** Příjem nebo náklad střediska. unit = "kemp" | "wakesurf" | "bistro" | "wakeboard". */
+export const transactions = pgTable("transactions", {
+  id: serial("id").primaryKey(),
+  unit: text("unit").notNull(),
+  date: date("date").notNull(),
+  kind: txKind("kind").notNull(),
+  category: text("category").notNull(),
+  amount: integer("amount").notNull(),
+  method: payMethod("method").notNull(),
+  source: text("source").notNull().default("manual"),
+  /** Pro opakovaný import bez duplicit (např. id dokladu z KiloMayo). */
+  externalId: text("external_id"),
+  note: text("note"),
+}, (t) => [uniqueIndex("transactions_external_idx").on(t.externalId)]);
+
+/** Přepočet hotovosti v pokladně střediska. */
+export const cashCounts = pgTable("cash_counts", {
+  id: serial("id").primaryKey(),
+  unit: text("unit").notNull(),
+  date: date("date").notNull(),
+  amount: integer("amount").notNull(),
+  countedBy: text("counted_by"),
+  note: text("note"),
+});
+
+export type Transaction = typeof transactions.$inferSelect;
+export type CashCount = typeof cashCounts.$inferSelect;
