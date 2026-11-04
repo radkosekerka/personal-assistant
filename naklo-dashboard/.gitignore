@@ -1,0 +1,9 @@
+node_modules
+.next
+.env
+.env.local
+*.tsbuildinfo
+next-env.d.ts
+# Nikdy necommitovat exporty s osobními údaji
+data/
+*.csv
