@@ -1,0 +1,10 @@
+# Build obou obrazů (web + jobs) v Cloud Buildu, bez lokálního Dockeru. Volá deploy.sh.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "--target", "web", "-t", "${_IMAGE}:${_TAG}", "."]
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "--target", "jobs", "-t", "${_IMAGE}-jobs:${_TAG}", "."]
+images: ["${_IMAGE}:${_TAG}", "${_IMAGE}-jobs:${_TAG}"]
+options:
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1200s

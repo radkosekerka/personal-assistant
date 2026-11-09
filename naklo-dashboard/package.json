@@ -15,7 +15,8 @@
     "import:hours": "tsx scripts/import-csv.ts",
     "sync:events": "tsx scripts/sync-events.ts",
     "sync:bank": "tsx scripts/sync-bank.ts",
-    "kb:statement": "tsx scripts/kb-software-statement.ts"
+    "kb:statement": "tsx scripts/kb-software-statement.ts",
+    "bot": "tsx scripts/run-bot.ts"
   },
   "dependencies": {
     "drizzle-orm": "0.45.4",

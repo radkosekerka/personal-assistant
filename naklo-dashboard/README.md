@@ -74,6 +74,10 @@ npm run dev
 npm test
 ```
 
+## Nasazení
+
+Google Cloud v EU: Cloud Run za IAP, Cloud SQL, plánované úlohy přes Cloud Scheduler. Postup krok za krokem v [`deploy/gcp/README.md`](deploy/gcp/README.md).
+
 ## Bezpečnost
 
 - Žádné osobní údaje v repozitáři (`.gitignore` blokuje `data/` a `*.csv`), demo data jsou vymyšlená.
