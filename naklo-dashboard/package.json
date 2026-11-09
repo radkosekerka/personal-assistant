@@ -13,7 +13,9 @@
     "db:seed": "tsx scripts/seed-demo.ts",
     "sync:kilomayo": "tsx scripts/sync-kilomayo.ts",
     "import:hours": "tsx scripts/import-csv.ts",
-    "sync:events": "tsx scripts/sync-events.ts"
+    "sync:events": "tsx scripts/sync-events.ts",
+    "sync:bank": "tsx scripts/sync-bank.ts",
+    "kb:statement": "tsx scripts/kb-software-statement.ts"
   },
   "dependencies": {
     "drizzle-orm": "0.45.4",

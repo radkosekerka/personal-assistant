@@ -11,7 +11,7 @@ async function main() {
   if (process.env.NODE_ENV === "production") throw new Error("Demo data nepatří do produkce");
   const db = getDb();
   await db.execute(
-    sql`TRUNCATE outbox, briefs, owners, pr_items, transactions, cash_counts, audit_log, tasks, invoices, payments, work_months, contracts, trainings, training_requirements, staffing_needs, events, inquiries, leads, people, companies RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE bank_transactions, bank_accounts, bank_connections, outbox, briefs, owners, pr_items, transactions, cash_counts, audit_log, tasks, invoices, payments, work_months, contracts, trainings, training_requirements, staffing_needs, events, inquiries, leads, people, companies RESTART IDENTITY CASCADE`,
   );
 
   const today = todayIso();
@@ -180,6 +180,46 @@ async function main() {
     const exp = 5000 + cashUntil(unit, c1, c2);
     await db.insert(schema.cashCounts).values({ unit, date: c2, amount: unit === "bistro" ? exp - 1450 : exp, countedBy: "demo" });
   }
+
+  // Banka: dvě vymyšlené firmy na KB, jeden účet pod hranicí, jedna velká platba, souhlas brzy vyprší.
+  const [services] = await db.insert(schema.companies).values({ name: "Náklo Services (demo)", ico: "00000001" }).returning();
+  const now = new Date();
+  const [connW, connS] = await db
+    .insert(schema.bankConnections)
+    .values([
+      { label: "Wake Surf Náklo (demo)", companyId: wsn.id, status: "aktivni", clientId: "demo-1", lastSyncAt: now, refreshTokenExpiresAt: new Date(now.getTime() + 300 * 86400_000) },
+      { label: "Náklo Services (demo)", companyId: services.id, status: "aktivni", clientId: "demo-2", lastSyncAt: now, refreshTokenExpiresAt: new Date(now.getTime() + 18 * 86400_000) },
+    ])
+    .returning();
+  const [opAcc, , svcAcc] = await db
+    .insert(schema.bankAccounts)
+    .values([
+      { connectionId: connW.id, companyId: wsn.id, externalId: "demo-a1", iban: "CZ0001000000000000000001", currency: "CZK", name: "Provozní", bookedBalance: 412350.5, availableBalance: 398120.5, balanceAt: now, lowBalanceLimit: 150000 },
+      { connectionId: connW.id, companyId: wsn.id, externalId: "demo-a2", iban: "CZ0001000000000000000002", currency: "EUR", name: "Eurový", bookedBalance: 8240, availableBalance: 8240, balanceAt: now },
+      { connectionId: connS.id, companyId: services.id, externalId: "demo-a3", iban: "CZ0001000000000000000003", currency: "CZK", name: "Běžný", bookedBalance: 61200, availableBalance: 48900, balanceAt: now, lowBalanceLimit: 80000 },
+    ])
+    .returning();
+  const btx: (typeof schema.bankTransactions.$inferInsert)[] = [];
+  let n = 0;
+  const T = (accountId: number, date: string, amount: number, name: string, extra: Partial<typeof schema.bankTransactions.$inferInsert> = {}) =>
+    btx.push({ accountId, externalId: `demo-${++n}`, status: "BOOK", bookingDate: date, valueDate: date, amount, currency: "CZK", type: "DOMESTIC", counterpartyName: name, ...extra });
+  for (let k = 5; k >= 0; k--) {
+    const mm = addMonths(m0, -k);
+    const season = [0.15, 0.35, 0.7, 1, 0.9, 0.5][(Number(mm.slice(5)) + 6) % 6] ?? 0.5;
+    const days = k === 0 ? Number(today.slice(8)) : 28;
+    for (let d = 2; d <= days; d += 3) T(opAcc.id, dayOfMonth(mm, d), Math.round(45000 * season * (0.7 + rnd() * 0.6)), "Global Payments (karty)", { message: "Vypořádání karetních plateb" });
+    for (let d = 5; d <= days; d += 7) T(opAcc.id, dayOfMonth(mm, d), Math.round(18000 * season * (0.6 + rnd() * 0.8)), "Stripe Payments Europe", { message: "Payout" });
+    if (days >= 10) T(opAcc.id, dayOfMonth(mm, 10), -Math.round(160000 * (0.5 + season * 0.5)), "Mzdy (demo)", { message: "Výplaty" });
+    if (days >= 15) T(opAcc.id, dayOfMonth(mm, 15), -Math.round(38000 * season + 6000), "ČEZ Prodej (demo)", { variableSymbol: "1234567890", message: "Elektřina" });
+    if (days >= 20) T(opAcc.id, dayOfMonth(mm, 20), -Math.round(70000 * season + 10000), "Makro Cash & Carry (demo)", { type: "CARD" });
+    if (days >= 25) T(svcAcc.id, dayOfMonth(mm, 25), Math.round(55000 * season + 15000), "Firma Demo s.r.o.", { variableSymbol: `2026${String(k).padStart(4, "0")}`, message: "Faktura za akci" });
+    if (days >= 26) T(svcAcc.id, dayOfMonth(mm, 26), -42000, "Nájem (demo)", { message: "Nájem areálu" });
+    // převod mezi vlastními účty, v cashflow se nemá počítat
+    if (days >= 27) T(opAcc.id, dayOfMonth(mm, 27), -30000, "Náklo Services (demo)", { counterpartyAccount: "3/0100", message: "Převod mezi účty" });
+  }
+  T(opAcc.id, today, -185000, "Lodě Demo s.r.o.", { variableSymbol: "20260077", message: "Záloha na servis lodi" });
+  T(opAcc.id, today, -1890, "Shell (demo)", { status: "PDNG", bookingDate: null, type: "CARD" });
+  await db.insert(schema.bankTransactions).values(btx);
 
   const [radko, evaOwner, tomas] = await db
     .insert(schema.owners)

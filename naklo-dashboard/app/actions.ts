@@ -2,10 +2,12 @@
 
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getDb, schema } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { runBot } from "@/lib/bot/run";
+import { renewKbConsent, startKbConnection, syncAllBanks } from "@/lib/bank/sync";
 
 async function audit(actor: string, action: string, detail?: string) {
   await getDb().insert(schema.auditLog).values({ actor, action, detail });
@@ -187,4 +189,51 @@ export async function saveOwner(form: FormData) {
   else await getDb().insert(schema.owners).values(row);
   await audit(actor, id ? "owner.update" : "owner.create", data.name);
   revalidatePath("/", "layout");
+}
+
+/* ───────── Banka ───────── */
+
+/** Založí propojení s KB a pošle prohlížeč do MojeBanka ke schválení (výběr účtů, KB klíč). */
+export async function startBankConnection(form: FormData) {
+  const actor = await requireUser();
+  const data = z
+    .object({ label: z.string().trim().min(1).max(100), companyId: z.coerce.number().int().positive().optional() })
+    .parse({ label: form.get("label"), companyId: opt(form.get("companyId")) });
+  const url = await startKbConnection(data.label, data.companyId ?? null, actor);
+  redirect(url);
+}
+
+export async function renewBankConsent(form: FormData) {
+  const actor = await requireUser();
+  const id = z.coerce.number().int().positive().parse(form.get("id"));
+  redirect(await renewKbConsent(id, actor));
+}
+
+export async function syncBanksNow() {
+  const actor = await requireUser();
+  await syncAllBanks(actor);
+  revalidatePath("/finance", "layout");
+}
+
+export async function saveBankAccount(form: FormData) {
+  const actor = await requireUser();
+  const data = z
+    .object({
+      id: z.coerce.number().int().positive(),
+      lowBalanceLimit: z.coerce.number().int().min(0).optional(),
+      companyId: z.coerce.number().int().positive().optional(),
+      active: z.boolean(),
+    })
+    .parse({
+      id: form.get("id"),
+      lowBalanceLimit: opt(form.get("lowBalanceLimit")),
+      companyId: opt(form.get("companyId")),
+      active: form.get("active") === "on",
+    });
+  await getDb()
+    .update(schema.bankAccounts)
+    .set({ lowBalanceLimit: data.lowBalanceLimit ?? null, companyId: data.companyId ?? null, active: data.active })
+    .where(eq(schema.bankAccounts.id, data.id));
+  await audit(actor, "bank.account.update", String(data.id));
+  revalidatePath("/finance", "layout");
 }

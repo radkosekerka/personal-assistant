@@ -8,7 +8,9 @@ import {
   date,
   timestamp,
   boolean,
+  numeric,
   uniqueIndex,
+  index,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -383,3 +385,101 @@ export type PrItem = typeof prItems.$inferSelect;
 export type Owner = typeof owners.$inferSelect;
 export type Brief = typeof briefs.$inferSelect;
 export type OutboxMsg = typeof outbox.$inferSelect;
+
+/* ───────────── Banka (KB API, Account Direct Access) ───────────── */
+
+export const bankConnStatus = pgEnum("bank_conn_status", ["registrace", "autorizace", "aktivni", "vyprselo", "chyba"]);
+
+/**
+ * Jedno propojení s bankou = jeden klient KB (firma nebo osoba), který aplikaci schválil v MojeBanka.
+ * Tajemství (client_secret, refresh token, registrační klíč) jsou v DB jen zašifrovaná (BANK_ENCRYPTION_KEY).
+ */
+export const bankConnections = pgTable("bank_connections", {
+  id: serial("id").primaryKey(),
+  provider: text("provider").notNull().default("kb_adaa"),
+  /** Pro koho propojení je, např. "Wake Surf Náklo s.r.o." */
+  label: text("label").notNull(),
+  companyId: integer("company_id").references(() => companies.id, { onDelete: "set null" }),
+  status: bankConnStatus("status").notNull().default("registrace"),
+  /** AES klíč z registrace aplikace (jen během registrace), zašifrovaný. */
+  registrationKeyEnc: text("registration_key_enc"),
+  /** Náhodný state pro OAuth2, ověřuje se při návratu z KB. */
+  oauthState: text("oauth_state"),
+  clientId: text("client_id"),
+  clientSecretEnc: text("client_secret_enc"),
+  refreshTokenEnc: text("refresh_token_enc"),
+  /** Refresh token platí 12 měsíců, pak musí klient KB souhlas obnovit. */
+  refreshTokenExpiresAt: timestamp("refresh_token_expires_at", { withTimezone: true }),
+  lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+  lastError: text("last_error"),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const bankAccounts = pgTable(
+  "bank_accounts",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id")
+      .notNull()
+      .references(() => bankConnections.id, { onDelete: "cascade" }),
+    companyId: integer("company_id").references(() => companies.id, { onDelete: "set null" }),
+    /** accountId z KB API (neprůhledné ID, IBAN se v URL neposílá). */
+    externalId: text("external_id").notNull(),
+    iban: text("iban").notNull(),
+    currency: text("currency").notNull(),
+    name: text("name"),
+    product: text("product"),
+    /** Účetní zůstatek (PREVIOUSLY_CLOSED_BOOK). */
+    bookedBalance: numeric("booked_balance", { precision: 14, scale: 2, mode: "number" }),
+    /** Disponibilní zůstatek (CLOSING_AVAILABLE), zahrnuje blokace karet. */
+    availableBalance: numeric("available_balance", { precision: 14, scale: 2, mode: "number" }),
+    creditLine: numeric("credit_line", { precision: 14, scale: 2, mode: "number" }),
+    balanceAt: timestamp("balance_at", { withTimezone: true }),
+    /** Pod tímto disponibilním zůstatkem hlásit red flag (v měně účtu). */
+    lowBalanceLimit: integer("low_balance_limit"),
+    active: boolean("active").notNull().default(true),
+  },
+  (t) => [uniqueIndex("bank_accounts_external_idx").on(t.externalId), uniqueIndex("bank_accounts_iban_idx").on(t.iban, t.currency)],
+);
+
+export const bankTxStatus = pgEnum("bank_tx_status", ["BOOK", "PDNG"]);
+
+/** Pohyby na účtu. Kladná částka = příjem, záporná = výdaj. */
+export const bankTransactions = pgTable(
+  "bank_transactions",
+  {
+    id: serial("id").primaryKey(),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => bankAccounts.id, { onDelete: "cascade" }),
+    /** references.accountServicer: stejné pro blokaci (PDNG) i zaúčtování (BOOK). */
+    externalId: text("external_id").notNull(),
+    status: bankTxStatus("status").notNull(),
+    bookingDate: date("booking_date"),
+    valueDate: date("value_date"),
+    amount: numeric("amount", { precision: 14, scale: 2, mode: "number" }).notNull(),
+    currency: text("currency").notNull(),
+    /** DOMESTIC, FOREIGN, CARD, FEE, CASH, OTHER… */
+    type: text("type"),
+    counterpartyName: text("counterparty_name"),
+    /** Číslo účtu protistrany ve tvaru 123456789/0100, případně IBAN. */
+    counterpartyAccount: text("counterparty_account"),
+    variableSymbol: text("variable_symbol"),
+    constantSymbol: text("constant_symbol"),
+    specificSymbol: text("specific_symbol"),
+    message: text("message"),
+    note: text("note"),
+    /** Kategorie pro přehledy (doplní pravidla nebo člověk). */
+    category: text("category"),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("bank_tx_account_external_idx").on(t.accountId, t.externalId),
+    index("bank_tx_account_date_idx").on(t.accountId, t.bookingDate),
+  ],
+);
+
+export type BankConnection = typeof bankConnections.$inferSelect;
+export type BankAccount = typeof bankAccounts.$inferSelect;
+export type BankTransaction = typeof bankTransactions.$inferSelect;

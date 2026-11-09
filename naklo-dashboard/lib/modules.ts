@@ -29,9 +29,9 @@ export const MODULES: ModuleDef[] = [
     key: "finance",
     name: "Finance",
     href: "/finance",
-    live: false,
-    summary: "Stav celé skupiny: mateřská Wake Surf Náklo a propojené s.r.o., cashflow, závazky, pohledávky.",
-    sources: ["Bankovní účty všech firem", "Účetnictví (export od účetní)", "Stripe", "KiloMayo Finances"],
+    live: true,
+    summary: "Zůstatky a pohyby na účtech KB všech firem skupiny, cashflow, nízké zůstatky, velké platby.",
+    sources: ["KB API (zůstatky a pohyby)", "Účetnictví (export od účetní)", "Stripe", "KiloMayo Finances"],
   },
   {
     key: "kemp",
