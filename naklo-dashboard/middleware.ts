@@ -6,7 +6,7 @@ export default auth((req) => {
   const { pathname } = req.nextUrl;
   if (pathname.startsWith("/api/auth") || pathname === "/prihlaseni") return NextResponse.next();
   // Cron má vlastní ověření tajemstvím (CRON_SECRET) v route handleru.
-  if (pathname === "/api/cron/bot") return NextResponse.next();
+  if (pathname.startsWith("/api/cron/")) return NextResponse.next();
   if (!isAllowedEmail(req.auth?.user?.email)) {
     if (pathname.startsWith("/api/")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     return NextResponse.redirect(new URL("/prihlaseni", req.nextUrl));
