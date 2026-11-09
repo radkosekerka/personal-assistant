@@ -10,7 +10,9 @@ export function getDb(): Db {
   if (!g.wsnHrDb) {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL není nastavené");
-    g.wsnHrPg = postgres(url, { max: 5 });
+    // Cloud Run + Cloud SQL: spojení přes unix socket /cloudsql/PROJEKT:REGION:INSTANCE
+    const socketDir = process.env.DATABASE_SOCKET_DIR;
+    g.wsnHrPg = postgres(url, { max: 5, ...(socketDir ? { path: `${socketDir}/.s.PGSQL.5432` } : {}) });
     g.wsnHrDb = drizzle(g.wsnHrPg, { schema });
   }
   return g.wsnHrDb;
